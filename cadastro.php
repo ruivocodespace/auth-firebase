@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <title>Cadastro - Sistema</title>
     <link rel="stylesheet" href="style.css">
+    
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
     <div class="auth-container">
@@ -12,6 +14,8 @@
         <input type="text" id="nome" placeholder="Nome Completo">
         <input type="email" id="email" placeholder="E-mail">
         <input type="password" id="senha" placeholder="Senha (mín. 6 chars)">
+        
+        <div class="g-recaptcha" data-sitekey="6LdCjYcsAAAAACm6fIpG6xO8qQpd9P3HdIzPYthp" style="margin-bottom: 15px; display: flex; justify-content: center;"></div>
         
         <button class="btn-primary" id="btnCadastrar">Cadastrar</button>
         <p id="msg" class="msg"></p>
@@ -39,22 +43,45 @@
             const msg = document.getElementById('msg');
 
             if(!nome || !email || !senha) return msg.innerText = "Preencha todos os campos!";
-            msg.style.color = "blue"; msg.innerText = "Processando...";
+            
+            // 3. VERIFICA SE O USUÁRIO CLICOU NO CAPTCHA
+            const recaptchaResponse = grecaptcha.getResponse();
+            if(recaptchaResponse.length === 0) {
+                msg.style.color = "orange";
+                return msg.innerText = "Por favor, marque a caixa 'Não sou um robô'.";
+            }
+
+            msg.style.color = "blue"; 
+            msg.innerText = "Validando segurança...";
 
             try {
-                // 1. Cria usuário
+                // 4. ENVIA O TOKEN DO CAPTCHA PARA O PHP VALIDAR NO GOOGLE
+                const respostaPHP = await fetch('verificar_captcha.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: recaptchaResponse })
+                });
+                
+                const resultadoCaptcha = await respostaPHP.json();
+
+                if (!resultadoCaptcha.sucesso) {
+                    msg.style.color = "red";
+                    grecaptcha.reset(); // Reseta a caixinha
+                    return msg.innerText = "Falha na verificação de segurança. Tente novamente.";
+                }
+
+                // 5. SE O PHP DISSER QUE É HUMANO, PROSSEGUE COM O FIREBASE
+                msg.innerText = "Criando conta...";
+                
                 const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
                 const user = userCredential.user;
 
-                // 2. Envia e-mail de verificação
                 await sendEmailVerification(user);
 
-                // 3. Salva no banco (Firestore)
                 await setDoc(doc(db, "usuarios", user.uid), {
                     nome: nome, email: email, provedor: "senha", criadoEm: serverTimestamp()
                 });
 
-                // 4. Desloga para impedir acesso sem verificar e-mail
                 await signOut(auth);
 
                 msg.style.color = "green";
@@ -63,7 +90,10 @@
 
             } catch (error) {
                 msg.style.color = "red";
-                msg.innerText = "Erro: " + error.message;
+                grecaptcha.reset(); // Reseta o captcha se der erro de senha fraca, email repetido, etc.
+                if(error.code === 'auth/email-already-in-use') msg.innerText = "E-mail já cadastrado!";
+                else if(error.code === 'auth/weak-password') msg.innerText = "Senha muito fraca!";
+                else msg.innerText = "Erro: " + error.message;
             }
         };
     </script>

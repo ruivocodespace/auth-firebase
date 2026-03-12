@@ -49,8 +49,10 @@
             return msg.innerText = "Por favor, marque a caixa 'Não sou um robô'.";
         }
 
-        msg.style.color = "blue"; 
-        msg.innerText = "Validando segurança...";
+        msg.style.color = "green";
+            msg.innerText = "Sucesso! Redirecionando...";
+            // Redireciona para a tela de verificação passando o e-mail na URL
+            window.location.href = "verificacao.php?email=" + encodeURIComponent(email);
 
         try {
             const respostaPHP = await fetch('verificar_captcha.php', {
